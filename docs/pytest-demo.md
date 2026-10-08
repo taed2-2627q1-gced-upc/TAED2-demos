@@ -4,7 +4,10 @@ learning project.
 
 ## Contents <!-- omit in toc -->
 - [Install Pytest](#install-pytest)
-- [Create the test file](#create-the-test-file)
+- [Unit tests](#unit-tests)
+- [Why fixtures and parametrization?](#why-fixtures-and-parametrization)
+- [Model behavioral tests](#model-behavioral-tests)
+- [Configure Pytest](#configure-pytest)
 - [Run the tests](#run-the-tests)
 - [Measure test coverage (Optional)](#measure-test-coverage-optional)
 
@@ -15,19 +18,60 @@ following command:
 uv add --group dev pytest
 ```
 
-## Create the test file
-We can now create a test file called [`test_model.py`](../tests/test_model.py) in the `tests` directory. In this file,
-we will create a test to check that our model meets our expectations.
+## Unit tests
+A unit test checks one small function in isolation, with hand-built inputs and no model, disk or network. The
+functions in [`preprocess.py`](../src/data/preprocess.py) are a good fit. See
+[`test_preprocess.py`](../tests/test_preprocess.py):
 
-To do this, we will create a fixture called `pipe` that will load the model from the `models` directory and another 
-called `test_ds` that will load the test dataset. Then, we will create a test function called `test_model_accuracy` that
-will use the previous fixtures to load the model and check that the model accuracy on the test set is above a certain threshold.
+- the `sample_df` fixture builds a tiny DataFrame (with nulls, empty strings and duplicates) for `remove_empty_or_duplicate`;
+- `test_sanitize_text` is parametrized over several raw/expected pairs, one per cleaning rule.
 
-Next, we create a second test called `test_model_predictions` to see if the model still works when changing one word in
-the input. In this case, we want to test the model for multiple inputs. To do this, we will use the `pytest.mark.parametrize`
-decorator to parametrize the test function. This decorator receives the names of the parameters and a list of values.
+One case, `multiple-gaps`, is marked `xfail(strict=True)`: `sanitize_text` uses `str.replace`, which only replaces the
+**first** match, so `"a  b\nc  d"` is not fully normalized. The unit test found a real bug. When it is fixed, `strict=True`
+makes the suite fail until the marker is removed.
 
-Finally, we will add the following lines to the [`pyproject.toml`](../pyproject.toml) file to configure `pytest`:
+## Why fixtures and parametrization?
+Before using them, see what goes wrong without them. The runnable examples live in
+[`demo_antipatterns/`](../demo_antipatterns), outside `testpaths`, so they never run with the regular suite:
+
+```bash
+uv run pytest demo_antipatterns/test_no_fixture.py --no-cov --durations=0
+```
+
+| Without... | File | What goes wrong |
+|---|---|---|
+| a fixture | [`test_no_fixture.py`](../demo_antipatterns/test_no_fixture.py) | Setup is copy-pasted into every test and the model is reloaded each time. The first call took 1.25 s and the next two about 0.15 s, because Hugging Face caches the weights; on a cold cache or a larger model the gap is much bigger. A fixture with `scope="session"` loads it once. |
+| test isolation | [`test_shared_state.py`](../demo_antipatterns/test_shared_state.py) | Tests share a module-level list. `test_only_one_result_recorded` passes alone but fails after the other test, so results depend on execution order. A function-scoped fixture gives every test a fresh object. |
+| `parametrize` | [`test_no_parametrize.py`](../demo_antipatterns/test_no_parametrize.py) | Several checks live in one test. The first failing assert stops the function, so the cases after it are never run and you see only one failure. `parametrize` runs and reports each case separately. |
+| `ids` | [`test_bad_ids.py`](../demo_antipatterns/test_bad_ids.py) | With object parameters the failure is reported as `test_labels[case1]`. With `pytest.param(..., id="negation")` it reads `test_mft_simple_sentences[negation]`. |
+
+Fixtures that need cleanup can also `yield`: the code after the `yield` runs even if the test fails (as in the `client`
+fixture in [`test_api.py`](../tests/test_api.py)).
+
+Shared fixtures live in [`conftest.py`](../tests/conftest.py), which pytest loads automatically:
+- `pipe` loads the model once per session;
+- `positive_score` is a *factory fixture*: it returns a function `text -> P(positive)`.
+
+## Model behavioral tests
+Accuracy on a test set tells us how well the model does on average, not *what* it does on specific inputs. Behavioral
+tests, as proposed in [CheckList](https://aclanthology.org/2020.acl-main.442/) (Ribeiro et al., 2020), probe it with
+controlled inputs. See [`test_model_behavior.py`](../tests/test_model_behavior.py):
+
+| Type | Idea | Test |
+|---|---|---|
+| **MFT** (minimal functionality) | Simple, unambiguous inputs must be right. | `test_mft_simple_sentences` |
+| **INV** (invariance) | A change that should not matter (name, casing, neutral sentence, typo) must not change the label. | `test_inv_label_does_not_change` |
+| **DIR** (directional expectation) | A change with a known direction must move P(positive) that way. Adding a negative sentence must lower it by at least 0.1; adding a positive one must not lower it by more than 0.01. | `test_dir_score_moves_in_expected_direction` |
+
+Two cases fail on the current model: negation (`"The movie was not bad."`) and a typo (`"I lovd this movie."` flips the
+label). They are marked `xfail(strict=True)` through `pytest.param(..., marks=...)`, so behavioral tests document real
+weaknesses without breaking the build. If a retrained model fixes one, `strict=True` flags it.
+
+The accuracy test stays in [`test_model.py`](../tests/test_model.py). For more checks and a tool to generate them, see the
+[CheckList library](https://github.com/marcotcr/checklist).
+
+## Configure Pytest
+Finally, we add the following lines to the [`pyproject.toml`](../pyproject.toml) file to configure `pytest`:
 ```toml
 [tool.pytest.ini_options]
 pythonpath = "."
@@ -36,7 +80,7 @@ testpaths = "tests"
 
 In detail:
 - `pythonpath` specifies the path to the source code;
-- `testpaths` specifies the directory where the tests are located;
+- `testpaths` specifies the directory where the tests are located (this is why `demo_antipatterns/` is not collected);
 
 ## Run the tests
 We can now run the tests using the following command:
