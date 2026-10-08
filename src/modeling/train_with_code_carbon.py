@@ -1,12 +1,12 @@
-import pickle
 from pathlib import Path
+import pickle
 
+from codecarbon import EmissionsTracker
 import mlflow
 import pandas as pd
-import yaml
-from codecarbon import EmissionsTracker
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.tree import DecisionTreeRegressor
+import yaml
 
 from src.config import METRICS_DIR, MODELS_DIR, PROCESSED_DATA_DIR
 
@@ -25,7 +25,7 @@ with mlflow.start_run():
     y_train = pd.read_csv(input_folder_path / "y_train.csv")
 
     # Read data preparation parameters
-    with open(params_path, "r", encoding="utf8") as params_file:
+    with open(params_path, encoding="utf8") as params_file:
         try:
             params = yaml.safe_load(params_file)
             params = params["train"]

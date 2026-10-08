@@ -1,5 +1,5 @@
-import polars as pl
 from huggingface_hub import hf_hub_download
+import polars as pl
 
 from src.config import RAW_DATA_DIR
 
@@ -15,9 +15,7 @@ def download_dataset():
     Download the dataset from Hugging Face and save it to the 'data/raw' directory.
     """
     frames = [
-        pl.read_parquet(
-            hf_hub_download(repo_id=REPO_ID, filename=filename, repo_type="dataset")
-        )
+        pl.read_parquet(hf_hub_download(repo_id=REPO_ID, filename=filename, repo_type="dataset"))
         for filename in SPLITS.values()
     ]
 
