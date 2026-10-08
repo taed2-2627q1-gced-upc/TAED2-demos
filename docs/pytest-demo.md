@@ -26,9 +26,9 @@ functions in [`preprocess.py`](../src/data/preprocess.py) are a good fit. See
 - the `sample_df` fixture builds a tiny DataFrame (with nulls, empty strings and duplicates) for `remove_empty_or_duplicate`;
 - `test_sanitize_text` is parametrized over several raw/expected pairs, one per cleaning rule.
 
-One case, `multiple-gaps`, is marked `xfail(strict=True)`: `sanitize_text` uses `str.replace`, which only replaces the
-**first** match, so `"a  b\nc  d"` is not fully normalized. The unit test found a real bug. When it is fixed, `strict=True`
-makes the suite fail until the marker is removed.
+One case, `multiple-gaps`, **fails on purpose**: `sanitize_text` uses `str.replace`, which only replaces the **first**
+match, so `"a  b\nc  d"` is not fully normalized. This is a real bug that the unit test found. Using `replace_all`
+instead fixes it.
 
 ## Why fixtures and parametrization?
 Before using them, see what goes wrong without them. The runnable examples live in
