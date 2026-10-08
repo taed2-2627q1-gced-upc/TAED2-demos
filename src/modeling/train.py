@@ -16,7 +16,7 @@ from transformers import (
 from src.config import MODELS_DIR, PROCESSED_DATA_DIR, SEED
 
 SPEEDUP_TRAINING = True  # Set to True to speed up training by using a smaller dataset
-SAMPLE_SIZE = 500
+SAMPLE_SIZE = 200
 
 BATCH_SIZE = 32
 EPOCHS = 1
@@ -96,9 +96,39 @@ def main(hf_model: str, model_name: str):
     mlflow.set_experiment("IMDB sentiment analysis")
     mlflow.set_system_metrics_sampling_interval(5)
     with mlflow.start_run(log_system_metrics=True):
-        trainer.train()
+        train_result = trainer.train()
+        eval_metrics = trainer.evaluate()
 
-    trainer.save_model(str(MODELS_DIR / model_name))
+        mlflow.log_params(
+            {
+                "hf_model": hf_model,
+                "speedup_training": SPEEDUP_TRAINING,
+                "sample_size": SAMPLE_SIZE,
+                "batch_size": BATCH_SIZE,
+            }
+        )
+        mlflow.log_metrics({**train_result.metrics, **eval_metrics})
+
+        trainer.save_model(str(MODELS_DIR / model_name))
+
+        # model_info = mlflow.transformers.log_model(
+        #     transformers_model={"model": trainer.model, "tokenizer": tokenizer},
+        #     name="model",
+        #     registered_model_name=model_name,
+        #     task="text-classification",
+        #     pip_requirements=[
+        #         "mlflow==3.5.1",
+        #         "transformers>=4.38.2,<=4.57.0",
+        #         "torch>=2.7.0",
+        #         "numpy<2.0",
+        #     ],
+        # )
+        # client = MlflowClient()
+        # client.set_registered_model_alias(model_name, "candidate", model_info.registered_model_version)
+        # logger.info(
+        #     f"Registered {model_name} v{model_info.registered_model_version} "
+        #     "in the MLflow Model Registry with alias 'candidate'."
+        # )
 
 
 if __name__ == "__main__":
